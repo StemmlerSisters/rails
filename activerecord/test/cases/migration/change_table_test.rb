@@ -165,28 +165,28 @@ module ActiveRecord
 
         def test_exclusion_constraint_creates_exclusion_constraint
           with_change_table do |t|
-            expect :add_exclusion_constraint, nil, [:delete_me, "daterange(start_date, end_date) WITH &&", using: :gist, where: "start_date IS NOT NULL AND end_date IS NOT NULL", name: "date_overlap"]
+            expect :add_exclusion_constraint, nil, [:delete_me, "daterange(start_date, end_date) WITH &&"], using: :gist, where: "start_date IS NOT NULL AND end_date IS NOT NULL", name: "date_overlap"
             t.exclusion_constraint "daterange(start_date, end_date) WITH &&", using: :gist, where: "start_date IS NOT NULL AND end_date IS NOT NULL", name: "date_overlap"
           end
         end
 
         def test_remove_exclusion_constraint_removes_exclusion_constraint
           with_change_table do |t|
-            expect :remove_exclusion_constraint, nil, [:delete_me, name: "date_overlap"]
+            expect :remove_exclusion_constraint, nil, [:delete_me], name: "date_overlap"
             t.remove_exclusion_constraint name: "date_overlap"
           end
         end
 
         def test_unique_constraint_creates_unique_constraint
           with_change_table do |t|
-            expect :add_unique_constraint, nil, [:delete_me, :foo, deferrable: :deferred, name: "unique_constraint"]
+            expect :add_unique_constraint, nil, [:delete_me, :foo], deferrable: :deferred, name: "unique_constraint"
             t.unique_constraint :foo, deferrable: :deferred, name: "unique_constraint"
           end
         end
 
         def test_remove_unique_constraint_removes_unique_constraint
           with_change_table do |t|
-            expect :remove_unique_constraint, nil, [:delete_me, name: "unique_constraint"]
+            expect :remove_unique_constraint, nil, [:delete_me], name: "unique_constraint"
             t.remove_unique_constraint name: "unique_constraint"
           end
         end
@@ -336,6 +336,26 @@ module ActiveRecord
         with_change_table do |t|
           expect :remove_check_constraint, nil, [:delete_me], name: "price_check"
           t.remove_check_constraint name: "price_check"
+        end
+      end
+
+      if current_adapter?(:PostgreSQLAdapter)
+        def test_validate_check_constraint
+          with_change_table do |t|
+            expect :add_check_constraint, nil, [:delete_me, "price > discounted_price"], name: "price_check", validate: false
+            t.check_constraint "price > discounted_price", name: "price_check", validate: false
+            expect :validate_check_constraint, :nil, [:delete_me, "price_check"]
+            t.validate_check_constraint "price_check"
+          end
+        end
+
+        def test_validate_constraint
+          with_change_table do |t|
+            expect :add_check_constraint, nil, [:delete_me, "price > discounted_price"], name: "price_check", validate: false
+            t.check_constraint "price > discounted_price", name: "price_check", validate: false
+            expect :validate_constraint, :nil, [:delete_me, "price_check"]
+            t.validate_constraint "price_check"
+          end
         end
       end
 

@@ -44,7 +44,7 @@ module ActiveRecord
         arel_table = arel_table.alias(table_name) if arel_table.name != table_name
         TableMetadata.new(association_klass, arel_table, reflection)
       else
-        type_caster = TypeCaster::Connection.new(klass)
+        type_caster = TypeCaster::Connection.new(klass, table_name)
         arel_table = Arel::Table.new(table_name, type_caster: type_caster)
         TableMetadata.new(nil, arel_table, reflection)
       end
@@ -69,9 +69,7 @@ module ActiveRecord
 
     def predicate_builder
       if klass
-        predicate_builder = klass.predicate_builder.dup
-        predicate_builder.instance_variable_set(:@table, self)
-        predicate_builder
+        klass.predicate_builder.with(self)
       else
         PredicateBuilder.new(self)
       end

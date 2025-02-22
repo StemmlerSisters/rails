@@ -118,9 +118,9 @@ module ActionDispatch
       #       assert_equal "/users", users_path
       #     end
       #
-      def with_routing(&block)
+      def with_routing(config = nil, &block)
         old_routes, old_controller = @routes, @controller
-        create_routes(&block)
+        create_routes(config, &block)
       ensure
         reset_routes(old_routes, old_controller)
       end
@@ -267,8 +267,8 @@ module ActionDispatch
       end
 
       private
-        def create_routes
-          @routes = ActionDispatch::Routing::RouteSet.new
+        def create_routes(config = nil)
+          @routes = ActionDispatch::Routing::RouteSet.new(config || ActionDispatch::Routing::RouteSet::DEFAULT_CONFIG)
           if @controller
             @controller = @controller.clone
             _routes = @routes
@@ -336,7 +336,7 @@ module ActionDispatch
         def fail_on(exception_class, message)
           yield
         rescue exception_class => e
-          raise Minitest::Assertion, message || e.message
+          flunk(message || e.message)
         end
     end
   end

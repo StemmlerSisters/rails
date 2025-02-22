@@ -1,108 +1,68 @@
-*   Request Forgery takes relative paths into account.
+*   The Cookie Serializer can now serialize an Active Support SafeBuffer when using message pack.
 
-    *Stefan Wienert*
-
-*   Add ".test" as a default allowed host in development to ensure smooth golden-path setup with puma.dev.
-
-    *DHH*
-
-*   Add `allow_browser` to set minimum browser versions for the application.
-
-    A browser that's blocked will by default be served the file in `public/426.html` with a HTTP status code of "426 Upgrade Required".
+    Such code would previously produce an error if an application was using messagepack as its cookie serializer.
 
     ```ruby
-    class ApplicationController < ActionController::Base
-      # Allow only browsers natively supporting webp images, web push, badges, import maps, CSS nesting + :has
-      allow_browser versions: :modern
-    end
-
-    class ApplicationController < ActionController::Base
-      # All versions of Chrome and Opera will be allowed, but no versions of "internet explorer" (ie). Safari needs to be 16.4+ and Firefox 121+.
-      allow_browser versions: { safari: 16.4, firefox: 121, ie: false }
-    end
-
-    class MessagesController < ApplicationController
-      # In addition to the browsers blocked by ApplicationController, also block Opera below 104 and Chrome below 119 for the show action.
-      allow_browser versions: { opera: 104, chrome: 119 }, only: :show
+    class PostController < ApplicationController
+      def index
+        flash.notice = t(:hello_html) # This would try to serialize a SafeBuffer, which was not possible.
+      end
     end
     ```
 
-    *DHH*
+    *Edouard Chin*
 
-*   Add rate limiting API.
+*   Fix `Rails.application.reload_routes!` from clearing almost all routes.
 
-    ```ruby
-    class SessionsController < ApplicationController
-      rate_limit to: 10, within: 3.minutes, only: :create
-    end
+    When calling `Rails.application.reload_routes!` inside a middleware of
+    a Rake task, it was possible under certain conditions that all routes would be cleared.
+    If ran inside a middleware, this would result in getting a 404 on most page you visit.
+    This issue was only happening in development.
 
-    class SignupsController < ApplicationController
-      rate_limit to: 1000, within: 10.seconds,
-        by: -> { request.domain }, with: -> { redirect_to busy_controller_url, alert: "Too many signups!" }, only: :new
-    end
+    *Edouard Chin*
+
+*   Add resource name to the `ArgumentError` that's raised when invalid `:only` or `:except` options are given to `#resource` or `#resources`
+
+    This makes it easier to locate the source of the problem, especially for routes drawn by gems.
+
+    Before:
+    ```
+    :only and :except must include only [:index, :create, :new, :show, :update, :destroy, :edit], but also included [:foo, :bar]
     ```
 
-    *DHH*, *Jean Boussier*
+    After:
+    ```
+    Route `resources :products` - :only and :except must include only [:index, :create, :new, :show, :update, :destroy, :edit], but also included [:foo, :bar]
+    ```
 
-*   Add `image/svg+xml` to the compressible content types of ActionDispatch::Static
+    *Jeremy Green*
 
-    *Georg Ledermann*
+*   Add `check_collisions` option to `ActionDispatch::Session::CacheStore`.
 
-*   Add instrumentation for ActionController::Live#send_stream
+    Newly generated session ids use 128 bits of randomness, which is more than
+    enough to ensure collisions can't happen, but if you need to harden sessions
+    even more, you can enable this option to check in the session store that the id
+    is indeed free you can enable that option. This however incurs an extra write
+    on session creation.
 
-    Allows subscribing to `send_stream` events. The event payload contains the filename, disposition, and type.
+    *Shia*
 
-    *Hannah Ramadan*
+*   In ExceptionWrapper, match backtrace lines with built templates more often,
+    allowing improved highlighting of errors within do-end blocks in templates.
+    Fix for Ruby 3.4 to match new method labels in backtrace.
 
-*   Add support for `with_routing` test helper in `ActionDispatch::IntegrationTest`
+    *Martin Emde*
 
-    *Gannon McGibbon*
+*   Allow setting content type with a symbol of the Mime type.
 
-*   Remove deprecated support to set `Rails.application.config.action_dispatch.show_exceptions` to `true` and `false`.
+    ```ruby
+    # Before
+    response.content_type = "text/html"
 
-    *Rafael Mendonça França*
+    # After
+    response.content_type = :html
+    ```
 
-*   Remove deprecated `speaker`, `vibrate`, and `vr` permissions policy directives.
+    *Petrik de Heus*
 
-    *Rafael Mendonça França*
-
-*   Remove deprecated `Rails.application.config.action_dispatch.return_only_request_media_type_on_content_type`.
-
-    *Rafael Mendonça França*
-
-*   Deprecate `Rails.application.config.action_controller.allow_deprecated_parameters_hash_equality`.
-
-    *Rafael Mendonça França*
-
-*   Remove deprecated comparison between `ActionController::Parameters` and `Hash`.
-
-    *Rafael Mendonça França*
-
-*   Remove deprecated constant `AbstractController::Helpers::MissingHelperError`.
-
-    *Rafael Mendonça França*
-
-*   Fix a race condition that could cause a `Text file busy - chromedriver`
-    error with parallel system tests
-
-    *Matt Brictson*
-
-*   Add `racc` as a dependency since it will become a bundled gem in Ruby 3.4.0
-
-    *Hartley McGuire*
-*   Remove deprecated constant `ActionDispatch::IllegalStateError`.
-
-    *Rafael Mendonça França*
-
-*   Add parameter filter capability for redirect locations.
-
-    It uses the `config.filter_parameters` to match what needs to be filtered.
-    The result would be like this:
-
-        Redirected to http://secret.foo.bar?username=roque&password=[FILTERED]
-
-    Fixes #14055.
-
-    *Roque Pinel*, *Trevor Turk*, *tonytonyjan*
-
-Please check [7-1-stable](https://github.com/rails/rails/blob/7-1-stable/actionpack/CHANGELOG.md) for previous changes.
+Please check [8-0-stable](https://github.com/rails/rails/blob/8-0-stable/actionpack/CHANGELOG.md) for previous changes.

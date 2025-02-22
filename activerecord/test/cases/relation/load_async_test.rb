@@ -5,27 +5,11 @@ require "models/post"
 require "models/category"
 require "models/comment"
 require "models/other_dog"
+require "concurrent/atomic/count_down_latch"
 
 module ActiveRecord
-  module WaitForAsyncTestHelper
-    private
-      def wait_for_async_query(connection = ActiveRecord::Base.lease_connection, timeout: 5)
-        return unless connection.async_enabled?
-
-        executor = connection.pool.async_executor
-        (timeout * 100).times do
-          return unless executor.scheduled_task_count > executor.completed_task_count
-          sleep 0.01
-        end
-
-        raise Timeout::Error, "The async executor wasn't drained after #{timeout} seconds"
-      end
-  end
-
   class LoadAsyncTest < ActiveRecord::TestCase
     include WaitForAsyncTestHelper
-
-    self.use_transactional_tests = false
 
     fixtures :posts, :comments, :categories, :categories_posts
 
@@ -174,13 +158,49 @@ module ActiveRecord
       assert_equal ["In Transaction"], posts.map(&:title).uniq
     end
 
+    def test_load_async_instrumentation_is_thread_safe
+      skip unless ActiveRecord::Base.connection.async_enabled?
+
+      begin
+        latch1 = Concurrent::CountDownLatch.new
+        latch2 = Concurrent::CountDownLatch.new
+
+        old_log = ActiveRecord::Base.connection.method(:log)
+        ActiveRecord::Base.connection.singleton_class.undef_method(:log)
+
+        ActiveRecord::Base.connection.singleton_class.define_method(:log) do |*args, **kwargs, &block|
+          unless kwargs[:async]
+            return old_log.call(*args, **kwargs, &block)
+          end
+
+          latch1.count_down
+          latch2.wait
+          old_log.call(*args, **kwargs, &block)
+        end
+
+        Post.async_count
+        latch1.wait
+
+        notification_called = false
+        ActiveSupport::Notifications.subscribed(->(*) { notification_called = true }, "sql.active_record") do
+          Post.count
+        end
+
+        assert(notification_called)
+      ensure
+        latch2.count_down
+        ActiveRecord::Base.connection.singleton_class.undef_method(:log)
+        ActiveRecord::Base.connection.singleton_class.define_method(:log, old_log)
+      end
+    end
+
     def test_eager_loading_query
       expected_records = Post.where(author_id: 1).eager_load(:comments).to_a
 
       status = {}
 
       subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |event|
-        if event.payload[:name] == "SQL"
+        if event.payload[:name] == "Post Eager Load"
           status[:executed] = true
           status[:async] = event.payload[:async]
         end
@@ -217,6 +237,11 @@ module ActiveRecord
       assert_equal titles, Post.where(author_id: 1).load_async.pluck(:title)
     end
 
+    def test_count
+      count = Post.where(author_id: 1).count
+      assert_equal count, Post.where(author_id: 1).load_async.count
+    end
+
     def test_size
       expected_size = Post.where(author_id: 1).size
 
@@ -233,18 +258,23 @@ module ActiveRecord
       assert_predicate deferred_posts, :loaded?
     end
 
-    def test_load_async_with_query_cache
+    def test_load_async_pluck_with_query_cache
       titles = Post.where(author_id: 1).pluck(:title)
       Post.cache do
         assert_equal titles, Post.where(author_id: 1).load_async.pluck(:title)
+      end
+    end
+
+    def test_load_async_count_with_query_cache
+      count = Post.where(author_id: 1).count
+      Post.cache do
+        assert_equal count, Post.where(author_id: 1).load_async.count
       end
     end
   end
 
   class LoadAsyncNullExecutorTest < ActiveRecord::TestCase
     unless in_memory_db?
-      self.use_transactional_tests = false
-
       fixtures :posts, :comments
 
       def setup
@@ -367,8 +397,6 @@ module ActiveRecord
     unless in_memory_db?
       include WaitForAsyncTestHelper
 
-      self.use_transactional_tests = false
-
       fixtures :posts, :comments
 
       def setup
@@ -453,7 +481,7 @@ module ActiveRecord
 
         status = {}
         subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |event|
-          if event.payload[:name] == "SQL"
+          if event.payload[:name] == "Post Eager Load"
             status[:executed] = true
             status[:async] = event.payload[:async]
           end
@@ -507,8 +535,6 @@ module ActiveRecord
   class LoadAsyncMixedThreadPoolExecutorTest < ActiveRecord::TestCase
     unless in_memory_db?
       include WaitForAsyncTestHelper
-
-      self.use_transactional_tests = false
 
       fixtures :posts, :comments, :other_dogs
 
