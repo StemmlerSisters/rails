@@ -105,8 +105,9 @@ ActiveRecord::Schema.define do
   end
 
   create_table :auto_id_tests, force: true, id: false do |t|
-    t.primary_key :auto_id
     t.integer     :value
+    t.timestamp   :published_at, default: -> { "CURRENT_TIMESTAMP" }
+    t.primary_key :auto_id
   end
 
   create_table :binaries, force: true do |t|
@@ -138,6 +139,7 @@ ActiveRecord::Schema.define do
     t.column :font_size, :integer, **default_zero
     t.column :difficulty, :integer, **default_zero
     t.column :cover, :string, default: "hard"
+    t.column :symbol_status, :string, default: "proposed"
     t.string :isbn
     t.string :external_id
     t.column :original_name, :string
@@ -148,20 +150,15 @@ ActiveRecord::Schema.define do
     t.index :isbn, where: "published_on IS NOT NULL", unique: true
     t.index "(lower(external_id))", unique: true if supports_expression_index?
 
-    if supports_datetime_with_precision?
-      t.datetime :created_at, precision: 6
-      t.datetime :updated_at, precision: 6
-    else
-      t.datetime :created_at
-      t.datetime :updated_at
-    end
+    t.datetime :created_at
+    t.datetime :updated_at
     t.date :updated_on
   end
 
   create_table :encrypted_books, id: :integer, force: true do |t|
     t.references :author
     t.string :format
-    t.column :name, :string, default: "<untitled>"
+    t.column :name, :string, default: "<untitled>", limit: 1024
     t.column :original_name, :string
     t.column :logo, :binary
 
@@ -198,6 +195,8 @@ ActiveRecord::Schema.define do
     t.integer :engines_count
     t.integer :wheels_count, default: 0, null: false
     t.datetime :wheels_owned_at
+    t.integer :bulbs_count
+    t.integer :custom_tyres_count
     t.column :lock_version, :integer, null: false, default: 0
     t.timestamps null: false
   end
@@ -380,13 +379,7 @@ ActiveRecord::Schema.define do
 
   create_table :comments, force: true do |t|
     t.integer :post_id, null: false
-    # use VARCHAR2(4000) instead of CLOB datatype as CLOB data type has many limitations in
-    # Oracle SELECT WHERE clause which causes many unit test failures
-    if ActiveRecord::TestCase.current_adapter?(:OracleAdapter)
-      t.string  :body, null: false, limit: 4000
-    else
-      t.text    :body, null: false
-    end
+    t.text    :body, null: false
     t.string  :type
     t.integer :label, default: 0
     t.integer :tags_count, default: 0
@@ -545,17 +538,10 @@ ActiveRecord::Schema.define do
     t.integer  :salary, default: 70000
     t.references :firm, index: false
     t.integer :mentor_id
-    if supports_datetime_with_precision?
-      t.datetime :legacy_created_at, precision: 6
-      t.datetime :legacy_updated_at, precision: 6
-      t.datetime :legacy_created_on, precision: 6
-      t.datetime :legacy_updated_on, precision: 6
-    else
-      t.datetime :legacy_created_at
-      t.datetime :legacy_updated_at
-      t.datetime :legacy_created_on
-      t.datetime :legacy_updated_on
-    end
+    t.datetime :legacy_created_at
+    t.datetime :legacy_updated_at
+    t.datetime :legacy_created_on
+    t.datetime :legacy_updated_on
   end
 
   create_table :developers_projects, force: true, id: false do |t|
@@ -600,6 +586,11 @@ ActiveRecord::Schema.define do
 
   create_table :engines, force: true do |t|
     t.references :car, index: false
+  end
+
+  create_table :enrollments, force: true do |t|
+    t.integer  :program_id
+    t.integer  :member_id
   end
 
   create_table :entrants, force: true do |t|
@@ -689,11 +680,7 @@ ActiveRecord::Schema.define do
 
   create_table :invoices, force: true do |t|
     t.integer :balance
-    if supports_datetime_with_precision?
-      t.datetime :updated_at, precision: 6
-    else
-      t.datetime :updated_at
-    end
+    t.datetime :updated_at
   end
 
   create_table :iris, force: true do |t|
@@ -829,6 +816,7 @@ ActiveRecord::Schema.define do
   end
 
   create_table :minimalistics, force: true do |t|
+    t.bigint :expires_at
   end
 
   create_table :mixed_case_monkeys, force: true, id: false do |t|
@@ -870,13 +858,9 @@ ActiveRecord::Schema.define do
     t.decimal :decimal_number_with_default, precision: 3, scale: 2, default: 2.78
     t.numeric :numeric_number
     t.float   :temperature
+    t.float   :temperature_with_limit, limit: 24
     t.decimal :decimal_number_big_precision, precision: 20
-    # Oracle/SQLServer supports precision up to 38
-    if ActiveRecord::TestCase.current_adapter?(:OracleAdapter, :SQLServerAdapter)
-      t.decimal :atoms_in_universe, precision: 38, scale: 0
-    else
-      t.decimal :atoms_in_universe, precision: 55, scale: 0
-    end
+    t.decimal :atoms_in_universe, precision: 55, scale: 0
   end
 
   create_table :orders, force: true do |t|
@@ -891,11 +875,7 @@ ActiveRecord::Schema.define do
 
   create_table :owners, primary_key: :owner_id, force: true do |t|
     t.string :name
-    if supports_datetime_with_precision?
-      t.column :updated_at, :datetime, precision: 6
-    else
-      t.column :updated_at, :datetime
-    end
+    t.column :updated_at, :datetime
     t.column :happy_at,   :datetime
     t.string :essay_id
   end
@@ -916,30 +896,18 @@ ActiveRecord::Schema.define do
       t.string :parrot_sti_class
       t.integer :killer_id
       t.integer :updated_count, :integer, default: 0
-      if supports_datetime_with_precision?
-        t.datetime :created_at, precision: 0
-        t.datetime :created_on, precision: 0
-        t.datetime :updated_at, precision: 0
-        t.datetime :updated_on, precision: 0
-      else
-        t.datetime :created_at
-        t.datetime :created_on
-        t.datetime :updated_at
-        t.datetime :updated_on
-      end
+      t.datetime :created_at, precision: 0
+      t.datetime :created_on, precision: 0
+      t.datetime :updated_at, precision: 0
+      t.datetime :updated_on, precision: 0
     end
 
     create_table :pirates, force: :cascade do |t|
       t.string :catchphrase
       t.integer :parrot_id
       t.integer :non_validated_parrot_id
-      if supports_datetime_with_precision?
-        t.datetime :created_on, precision: 6
-        t.datetime :updated_on, precision: 6
-      else
-        t.datetime :created_on
-        t.datetime :updated_on
-      end
+      t.datetime :created_on
+      t.datetime :updated_on
     end
 
     create_table :treasures, force: :cascade do |t|
@@ -1010,13 +978,7 @@ ActiveRecord::Schema.define do
   create_table :posts, force: true do |t|
     t.references :author
     t.string :title, null: false
-    # use VARCHAR2(4000) instead of CLOB datatype as CLOB data type has many limitations in
-    # Oracle SELECT WHERE clause which causes many unit test failures
-    if ActiveRecord::TestCase.current_adapter?(:OracleAdapter)
-      t.string  :body, null: false, limit: 4000
-    else
-      t.text    :body, null: false
-    end
+    t.text    :body, null: false
     t.string  :type
     t.integer :legacy_comments_count, default: 0
     t.integer :taggings_with_delete_all_count, default: 0
@@ -1059,6 +1021,16 @@ ActiveRecord::Schema.define do
     t.string :name
     t.decimal :price
     t.decimal :discounted_price
+  end
+
+  create_table :program_offerings, force: true do |t|
+    t.integer  :club_id
+    t.integer  :program_id
+    t.datetime :start_date
+  end
+
+  create_table :programs, force: true do |t|
+    t.string   :name
   end
 
   add_check_constraint :products, "price > discounted_price", name: "products_price_check"
@@ -1116,6 +1088,8 @@ ActiveRecord::Schema.define do
   create_table :rooms, force: true do |t|
     t.references :user
     t.references :owner
+    t.references :landlord
+    t.references :tenant
   end
 
   disable_referential_integrity do
@@ -1169,11 +1143,7 @@ ActiveRecord::Schema.define do
   create_table :ship_parts, force: true do |t|
     t.string :name
     t.integer :ship_id
-    if supports_datetime_with_precision?
-      t.datetime :updated_at, precision: 6
-    else
-      t.datetime :updated_at
-    end
+    t.datetime :updated_at
   end
 
   create_table :squeaks, force: true do |t|
@@ -1249,22 +1219,11 @@ ActiveRecord::Schema.define do
     t.string   :title, limit: 250
     t.string   :author_name
     t.string   :author_email_address
-    if supports_datetime_with_precision?
-      t.datetime :written_on, precision: 6
-    else
-      t.datetime :written_on
-    end
+    t.datetime :written_on
     t.time     :bonus_time
     t.date     :last_read
-    # use VARCHAR2(4000) instead of CLOB datatype as CLOB data type has many limitations in
-    # Oracle SELECT WHERE clause which causes many unit test failures
-    if ActiveRecord::TestCase.current_adapter?(:OracleAdapter)
-      t.string   :content, limit: 4000
-      t.string   :important, limit: 4000
-    else
-      t.text     :content
-      t.text     :important
-    end
+    t.text     :content
+    t.text     :important
     t.blob     :binary_content
     t.boolean  :approved, default: true
     t.integer  :replies_count, default: 0
@@ -1495,43 +1454,6 @@ ActiveRecord::Schema.define do
   create_table :toooooooooooooooooooooooooooooooooo_long_table_names, force: true do |t|
     t.bigint :toooooooo_long_a_id, null: false
     t.bigint :toooooooo_long_b_id, null: false
-  end
-end
-
-if ActiveRecord::Base.lease_connection.supports_insert_returning? && !ActiveRecord::TestCase.current_adapter?(:SQLite3Adapter)
-  ActiveRecord::Base.lease_connection.create_table :pk_autopopulated_by_a_trigger_records, force: true, id: false do |t|
-    t.integer :id, null: false
-  end
-
-  if ActiveRecord::TestCase.current_adapter?(:PostgreSQLAdapter)
-    ActiveRecord::Base.lease_connection.execute(
-      <<-SQL
-        CREATE OR REPLACE FUNCTION populate_column()
-        RETURNS TRIGGER AS $$
-        DECLARE
-          max_value INTEGER;
-        BEGIN
-            SELECT MAX(id) INTO max_value FROM pk_autopopulated_by_a_trigger_records;
-            NEW.id = COALESCE(max_value, 0) + 1;
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-
-        CREATE TRIGGER before_insert_trigger
-        BEFORE INSERT ON pk_autopopulated_by_a_trigger_records
-        FOR EACH ROW
-        EXECUTE FUNCTION populate_column();
-      SQL
-    )
-  elsif ActiveRecord::TestCase.current_adapter?(:Mysql2Adapter, :TrilogyAdapter)
-    ActiveRecord::Base.lease_connection.execute(
-      <<-SQL
-        CREATE TRIGGER before_insert_trigger
-        BEFORE INSERT ON pk_autopopulated_by_a_trigger_records
-        FOR EACH ROW
-        SET NEW.id = (SELECT COALESCE(MAX(id), 0) + 1 FROM pk_autopopulated_by_a_trigger_records);
-      SQL
-    )
   end
 end
 

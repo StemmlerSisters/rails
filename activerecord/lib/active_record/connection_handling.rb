@@ -87,6 +87,8 @@ module ActiveRecord
 
       connections = []
 
+      @shard_keys = shards.keys
+
       if shards.empty?
         shards[:default] = database
       end
@@ -175,6 +177,18 @@ module ActiveRecord
       connected_to_stack.pop
     end
 
+    # Passes the block to +connected_to+ for every +shard+ the
+    # model is configured to connect to (if any), and returns the
+    # results in an array.
+    #
+    # Optionally, +role+ and/or +prevent_writes+ can be passed which
+    # will be forwarded to each +connected_to+ call.
+    def connected_to_all_shards(role: nil, prevent_writes: false, &blk)
+      shard_keys.map do |shard|
+        connected_to(shard: shard, role: role, prevent_writes: prevent_writes, &blk)
+      end
+    end
+
     # Use a specified connection.
     #
     # This method is useful for ensuring that a specific connection is
@@ -256,18 +270,44 @@ module ActiveRecord
       connection_pool.lease_connection
     end
 
-    alias_method :connection, :lease_connection
+    # Soft deprecated. Use +#with_connection+ or +#lease_connection+ instead.
+    def connection
+      pool = connection_pool
+      if pool.permanent_lease?
+        case ActiveRecord.permanent_connection_checkout
+        when :deprecated
+          ActiveRecord.deprecator.warn <<~MESSAGE
+            Called deprecated `ActiveRecord::Base.connection` method.
+
+            Either use `with_connection` or `lease_connection`.
+          MESSAGE
+        when :disallowed
+          raise ActiveRecordError, <<~MESSAGE
+            Called deprecated `ActiveRecord::Base.connection` method.
+
+            Either use `with_connection` or `lease_connection`.
+          MESSAGE
+        end
+        pool.lease_connection
+      else
+        pool.active_connection
+      end
+    end
 
     # Return the currently leased connection into the pool
     def release_connection
-      connection.release_connection
+      connection_pool.release_connection
     end
 
     # Checkouts a connection from the pool, yield it and then check it back in.
-    # If a connection was already leased via #connection or a parent call to
+    # If a connection was already leased via #lease_connection or a parent call to
     # #with_connection, that same connection is yieled.
-    def with_connection(&block)
-      connection_pool.with_connection(&block)
+    # If #lease_connection is called inside the block, the connection won't be checked
+    # back in.
+    # If #connection is called inside the block, the connection won't be checked back in
+    # unless the +prevent_permanent_checkout+ argument is set to +true+.
+    def with_connection(prevent_permanent_checkout: false, &block)
+      connection_pool.with_connection(prevent_permanent_checkout: prevent_permanent_checkout, &block)
     end
 
     attr_writer :connection_specification_name
@@ -331,6 +371,14 @@ module ActiveRecord
 
     def clear_cache! # :nodoc:
       connection_pool.schema_cache.clear!
+    end
+
+    def shard_keys
+      connection_class_for_self.instance_variable_get(:@shard_keys) || []
+    end
+
+    def sharded?
+      shard_keys.any?
     end
 
     private
